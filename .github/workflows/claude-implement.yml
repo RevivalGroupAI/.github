@@ -68,6 +68,7 @@ jobs:
           claude_args: |
             --max-turns 50
             --model ${{ github.event.client_payload.model || 'claude-sonnet-4-6' }}
+            --allowedTools "Bash,Read,Edit,MultiEdit,Write,Glob,Grep,LS,WebFetch,TodoWrite"
 
       - name: Find PR
         id: pr
