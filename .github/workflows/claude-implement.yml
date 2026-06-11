@@ -4,9 +4,11 @@
 # Client repos call it via the thin caller in templates/client-repo/.
 #
 # Org-level Actions secrets required:
-#   ANTHROPIC_API_KEY    Claude API key for implementation runs
-#   REVIVAL_USAGE_TOKEN   bearer token for the Usage endpoint (matches the
-#                        Ingestion Worker's USAGE_TOKEN secret)
+#   ANTHROPIC_API_KEY      Claude API key for implementation runs
+#   REVIVAL_USAGE_TOKEN    bearer token for the Usage endpoint (matches the
+#                          Ingestion Worker's USAGE_TOKEN secret)
+#   CLOUDFLARE_API_TOKEN   Pages:Edit token, for branch preview deploys
+#   CLOUDFLARE_ACCOUNT_ID  account that hosts the Pages preview projects
 
 name: Claude Implement (shared)
 
@@ -20,6 +22,27 @@ on:
         required: false
         type: string
         default: https://support.revivalgroup.ai
+      # Cloudflare Pages project for branch preview deploys. Empty = skip.
+      pages_project:
+        required: false
+        type: string
+        default: ""
+      # Directory of the site package within the repo (pnpm workspace dir).
+      site_dir:
+        required: false
+        type: string
+        default: "."
+      # Build output directory, relative to site_dir.
+      build_dir:
+        required: false
+        type: string
+        default: "dist"
+      # Override the build command (run from the repo root) when the site
+      # needs env vars or a non-standard invocation.
+      build_command:
+        required: false
+        type: string
+        default: ""
 
 jobs:
   implement:
@@ -114,6 +137,43 @@ jobs:
           gh pr edit "${{ steps.pr.outputs.url }}" \
             --add-reviewer sarmadbokhari || true
 
+      # PRs opened with github.token never trigger the repo's own workflows or
+      # external CI, so previews must be deployed from this job directly.
+      - name: Deploy branch preview
+        id: preview
+        if: steps.pr.outputs.url != '' && inputs.pages_project != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BRANCH: claude/${{ github.event.client_payload.linear_issue_id }}
+          SITE_DIR: ${{ inputs.site_dir }}
+          BUILD_DIR: ${{ inputs.build_dir }}
+          BUILD_COMMAND: ${{ inputs.build_command }}
+          PAGES_PROJECT: ${{ inputs.pages_project }}
+        run: |
+          git fetch origin "$BRANCH" --depth 1
+          git checkout "$BRANCH"
+          npm install -g pnpm
+          # pnpm 10 blocks dependency build scripts (e.g. esbuild) by default.
+          pnpm install --no-frozen-lockfile --dangerously-allow-all-builds
+          if [ -n "$BUILD_COMMAND" ]; then
+            bash -c "$BUILD_COMMAND"
+          else
+            pnpm -C "$SITE_DIR" build
+          fi
+          DEPLOY_OUT=$(npx wrangler@4 pages deploy "$SITE_DIR/$BUILD_DIR" \
+            --project-name "$PAGES_PROJECT" \
+            --branch "$BRANCH" \
+            --commit-dirty=true)
+          echo "$DEPLOY_OUT"
+          PREVIEW_URL=$(echo "$DEPLOY_OUT" | grep -oE 'https://[a-zA-Z0-9.-]+\.pages\.dev' | tail -1)
+          echo "url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+          if [ -n "$PREVIEW_URL" ]; then
+            gh pr comment "${{ steps.pr.outputs.url }}" --body "Cloudflare preview: $PREVIEW_URL" || true
+          fi
+        continue-on-error: true
+
       - name: Report usage
         if: always()
         env:
@@ -124,4 +184,5 @@ jobs:
             --run-id "${{ inputs.run_id }}" \
             --execution-file "${{ steps.claude.outputs.execution_file }}" \
             --status "${{ steps.claude.outcome }}" \
-            --pr-url "${{ steps.pr.outputs.url }}"
+            --pr-url "${{ steps.pr.outputs.url }}" \
+            --preview-url "${{ steps.preview.outputs.url }}"
