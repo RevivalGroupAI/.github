@@ -37,6 +37,11 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Operate with the job's own token instead of the Claude GitHub App
+          # (which would otherwise need to be installed on every client repo).
+          # Note: PRs opened with this token do not trigger the repo's own
+          # `on: pull_request` workflows.
+          github_token: ${{ github.token }}
           prompt: |
             Implement the following ${{ github.event.client_payload.category }} from a client request.
             Linear ticket: ${{ github.event.client_payload.linear_issue_url }}
