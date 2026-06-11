@@ -42,6 +42,9 @@ jobs:
           # Note: PRs opened with this token do not trigger the repo's own
           # `on: pull_request` workflows.
           github_token: ${{ github.token }}
+          # repository_dispatch comes from our dispatch worker's GitHub App,
+          # so the initiating actor is a bot and must be allowlisted.
+          allowed_bots: "revival-implement"
           prompt: |
             Implement the following ${{ github.event.client_payload.category }} from a client request.
             Linear ticket: ${{ github.event.client_payload.linear_issue_url }}
