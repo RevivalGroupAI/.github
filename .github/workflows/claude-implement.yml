@@ -35,6 +35,10 @@ jobs:
 
       - id: claude
         uses: anthropics/claude-code-action@v1
+        env:
+          # The action wires git credentials but not the gh CLI; Claude needs
+          # this to run `gh pr create`.
+          GH_TOKEN: ${{ github.token }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Operate with the job's own token instead of the Claude GitHub App
@@ -70,16 +74,36 @@ jobs:
             --model ${{ github.event.client_payload.model || 'claude-sonnet-4-6' }}
             --allowedTools "Bash,Read,Edit,MultiEdit,Write,Glob,Grep,LS,WebFetch,TodoWrite"
 
-      - name: Find PR
+      - name: Find or create PR
         id: pr
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+          # Pass payload fields via env (not inline interpolation) so quotes in
+          # client-supplied titles can't break or inject into the script.
+          ISSUE_ID: ${{ github.event.client_payload.linear_issue_id }}
+          ISSUE_TITLE: ${{ github.event.client_payload.title }}
+          ISSUE_URL: ${{ github.event.client_payload.linear_issue_url }}
         run: |
-          PR_URL=$(gh pr list \
-            --repo "$GITHUB_REPOSITORY" \
-            --head "claude/${{ github.event.client_payload.linear_issue_id }}" \
-            --json url --jq '.[0].url // empty' || true)
+          BRANCH="claude/$ISSUE_ID"
+          PR_URL=""
+          # Only act if Claude actually pushed the branch.
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            PR_URL=$(gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --head "$BRANCH" \
+              --json url --jq '.[0].url // empty' || true)
+            if [ -z "$PR_URL" ]; then
+              # Claude pushed work but failed to open the PR; do it for them.
+              PR_URL=$(gh pr create \
+                --repo "$GITHUB_REPOSITORY" \
+                --base main \
+                --head "$BRANCH" \
+                --title "[$ISSUE_ID] $ISSUE_TITLE" \
+                --body "Automated implementation of $ISSUE_URL (PR opened by the workflow; see branch commits for details)." \
+                || true)
+            fi
+          fi
           echo "url=$PR_URL" >> "$GITHUB_OUTPUT"
 
       - name: Request review
