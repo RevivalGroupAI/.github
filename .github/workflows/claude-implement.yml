@@ -56,6 +56,37 @@ jobs:
         with:
           fetch-depth: 1
 
+      # High-complexity tickets get a read-only planning pass with a stronger
+      # model first; its plan is left in the workspace for the implement step.
+      - id: plan
+        if: github.event.client_payload.plan_model != ''
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          allowed_bots: "revival-implement"
+          prompt: |
+            You are PLANNING, not implementing. Analyze this repository and the
+            request below, then write a concrete implementation plan to a new
+            file named IMPLEMENTATION_PLAN.md in the repository root. Include:
+            the files to change and how, the approach and key trade-offs, edge
+            cases, and verification steps (lint/build/tests to run).
+
+            Do NOT modify any other file. Do NOT run git commands. Do NOT
+            commit, push, or open PRs.
+
+            ## Request (${{ github.event.client_payload.category }})
+            Linear ticket: ${{ github.event.client_payload.linear_issue_url }}
+
+            ${{ github.event.client_payload.description }}
+          claude_args: |
+            --max-turns 15
+            --model ${{ github.event.client_payload.plan_model }}
+            --allowedTools "Read,Glob,Grep,LS,Write,TodoWrite"
+
       - id: claude
         uses: anthropics/claude-code-action@v1
         env:
@@ -80,6 +111,11 @@ jobs:
             ${{ github.event.client_payload.description }}
 
             ## Rules
+            - If a file named IMPLEMENTATION_PLAN.md exists in the repository
+              root, read it FIRST and follow it — it was prepared by a planning
+              agent for this exact ticket. Never commit IMPLEMENTATION_PLAN.md:
+              delete it before staging files (rm IMPLEMENTATION_PLAN.md) and
+              never `git add` it.
             - IMPORTANT: You must create a NEW branch and a NEW pull request. Do NOT
               comment on, review, or modify any existing pull request.
             - Create a branch named claude/${{ github.event.client_payload.linear_issue_id }}
@@ -182,6 +218,7 @@ jobs:
         run: |
           node .github/scripts/report-usage.mjs \
             --run-id "${{ inputs.run_id }}" \
+            --execution-file "${{ steps.plan.outputs.execution_file }}" \
             --execution-file "${{ steps.claude.outputs.execution_file }}" \
             --status "${{ steps.claude.outcome }}" \
             --pr-url "${{ steps.pr.outputs.url }}" \
