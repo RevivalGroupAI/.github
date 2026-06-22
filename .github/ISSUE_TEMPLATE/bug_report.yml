@@ -1,5 +1,5 @@
 name: "Bug report"
-about: "Report a bug in this repo"
+description: "Report a bug in this repo"
 labels: ["bug"]
 assignees: ["sarmadbokhari"]
 body:
