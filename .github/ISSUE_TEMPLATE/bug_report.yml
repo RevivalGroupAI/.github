@@ -22,8 +22,3 @@ body:
         3. See error
     validations:
       required: true
-  - type: input
-    id: repo
-    attributes:
-      label: "Repository/service"
-      description: "Which repo or service is affected?"
