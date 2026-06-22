@@ -1,0 +1,29 @@
+name: "Bug report"
+about: "Report a bug in this repo"
+labels: ["bug"]
+assignees: ["sarmadbokhari"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: "Describe the bug"
+      description: "What happened? What did you expect to happen?"
+      placeholder: "A clear and concise description of the bug..."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Steps to reproduce"
+      description: "Provide detailed reproduction steps"
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+  - type: input
+    id: repo
+    attributes:
+      label: "Repository/service"
+      description: "Which repo or service is affected?"
